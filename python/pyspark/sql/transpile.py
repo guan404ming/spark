@@ -47,6 +47,11 @@ each. A NULL operand raises, as the method call would on ``None`` in Python.
 Other methods, and the optional ``start``/``end`` arguments, stay interpreted
 Python.
 
+``s.find(p)`` lowers to Catalyst ``instr`` minus one when both operands are
+strings (SPARK-59816): the code point index of the first match, ``-1`` on a
+miss, and ``0`` for an empty ``p``, as in Python. A NULL operand raises, and
+the optional ``start``/``end`` arguments stay interpreted Python.
+
 A lambda is lowered only when its source names it directly and alone: bind it
 to a name (``f = lambda x: x + 1``, annotated if you like) and give it a line
 of its own. Passed straight to ``udf(...)``, wrapped in another call, returned
@@ -120,6 +125,7 @@ from pyspark.sql.functions import (
     col,
     concat,
     endswith,
+    instr,
     length,
     lit,
     lower,
@@ -254,6 +260,7 @@ _STRING_METHODS: dict[str, Tuple[Callable[..., Column], int, str]] = {
     "lower": (lower, 0, "string"),
     "startswith": (startswith, 1, "bool"),
     "endswith": (endswith, 1, "bool"),
+    "find": (lambda s, p: instr(s, p) - 1, 1, "numeric"),
 }
 
 

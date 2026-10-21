@@ -2530,12 +2530,13 @@ class UDFTranspileUnitTests(ReusedSQLTestCase):
         self._raises(strlen, "a long", [(5,)], needle="")
 
     def test_udf_transpile_string_methods(self):
-        # SPARK-59816: upper/lower/startswith/endswith lower to Catalyst and match
-        # Python, including full Unicode case mappings (sharp s, final sigma), and
-        # startswith/endswith work under `if`, `not`, and `and`. A NULL receiver or
-        # argument raises like CPython, a proven-non-null branch returns None, and a
-        # non-string column falls back to Python.
-        S, B = StringType(), BooleanType()
+        # SPARK-59816: upper/lower/startswith/endswith/find lower to Catalyst and
+        # match Python, including full Unicode case mappings (sharp s, final sigma)
+        # and code point (not byte) indexes from find, and startswith/endswith work
+        # under `if`, `not`, and `and`. A NULL receiver or argument raises like
+        # CPython, a proven-non-null branch returns None, and a non-string column
+        # falls back to Python.
+        S, B, L = StringType(), BooleanType(), LongType()
         up = lambda s: s.upper()  # noqa: E731
         low = lambda s: s.lower()  # noqa: E731
         starts = lambda s, p: s.startswith(p)  # noqa: E731
@@ -2543,10 +2544,13 @@ class UDFTranspileUnitTests(ReusedSQLTestCase):
         branch = lambda s: "y" if s.startswith("a") else "n"  # noqa: E731
         negated = lambda s: not s.startswith("a")  # noqa: E731
         both = lambda s: s.startswith("a") and s.endswith("c")  # noqa: E731
+        find = lambda s, p: s.find(p)  # noqa: E731
         up_guarded = lambda s: s.upper() if s is not None else None  # noqa: E731
         starts_at = lambda s: s.startswith("a", 1)  # noqa: E731
+        find_at = lambda s: s.find("a", 1)  # noqa: E731
         words = [("",), ("abc",), ("straße",), ("ΟΔΟΣ",)]
         pairs = [("abc", "ab"), ("abc", "b"), ("abc", ""), ("", "a")]
+        hits = pairs + [("", ""), ("abc", "abcd"), ("straße", "e"), ("ΟΔΟΣ", "Σ")]
         for func, rt, schema, rows in [
             (up, S, "s string", words),
             (low, S, "s string", words),
@@ -2555,6 +2559,7 @@ class UDFTranspileUnitTests(ReusedSQLTestCase):
             (branch, S, "s string", [("ab",), ("ba",)]),
             (negated, B, "s string", [("ab",), ("ba",)]),
             (both, B, "s string", [("abc",), ("ab",), ("bc",)]),
+            (find, L, "s string, p string", hits),
         ]:
             with self.subTest(func=func):
                 expected = [func(*r) for r in rows]
@@ -2564,9 +2569,11 @@ class UDFTranspileUnitTests(ReusedSQLTestCase):
         self._raises(
             starts, "s string, p string", [("abc", None)], needle="str.startswith()", return_type=B
         )
+        self._raises(find, "s string, p string", [(None, "a")], needle="str.find()")
         self._raises(up, "s long", [(5,)], needle="", return_type=S)
         with self.sql_conf(_TRANSPILE_ON):
             self._fallback_reason(starts_at, B)
+            self._fallback_reason(find_at, L)
 
     def test_udf_transpile_string_operands_fall_back(self):
         # Operand/type combos with no valid string lowering for the bound column
